@@ -121,8 +121,7 @@ def main():
     logger.info("🚀 Starting Phone OSINT Bot...")
     
     try:
-        # Import here to catch import errors
-        from telegram import ParseMode
+        # Version 13.15 mein ParseMode import nahi karna padta
         from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
         
         logger.info("✅ Libraries imported successfully")
