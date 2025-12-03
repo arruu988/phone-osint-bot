@@ -1,17 +1,18 @@
 import os
+import sys
 import requests
 import logging
 
-# Setup logging
+# Force Python path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8133993773:AAG_pRTiU2M_X-nKdD31HrAe-dXeAHuMDKo")
 OSINT_API = "https://osint-info.great-site.net/num.php?key=Vishal&phone="
 
 def get_phone_info(phone):
-    """Fetch phone information from API"""
     try:
         response = requests.get(OSINT_API + phone, timeout=10)
         if response.status_code == 200:
@@ -21,143 +22,98 @@ def get_phone_info(phone):
         logger.error(f"API Error: {e}")
         return None
 
-def format_info(data, phone):
-    """Format API response into readable text"""
-    if not data or not data.get('success'):
-        return "❌ No information found for this number."
-    
-    results = data.get('results', [])
-    if not results:
-        return "❌ No records found."
-    
-    text = f"📱 *Phone Lookup Results*\nNumber: `{phone}`\nRecords Found: {len(results)}\n\n"
-    
-    for i, record in enumerate(results, 1):
-        address = record.get('address', 'N/A').replace('!', ', ')
-        text += f"""*Record #{i}*
-👤 Name: {record.get('name', 'N/A')}
-👨 Father: {record.get('father_name', 'N/A')}
-📞 Mobile: {record.get('mobile', 'N/A')}
-🏠 Address: {address}
-📱 Alternate: {record.get('alternate_mobile', 'N/A')}
-📡 Telecom: {record.get('telecom_circle', 'N/A')}
-🆔 ID: {record.get('id_number', 'N/A')}
-━━━━━━━━━━━━━━━━━━━━━━
-"""
-    return text
-
-def start(update, context):
-    """Handle /start command"""
-    user = update.message.from_user
-    welcome = f"""
-🤖 *Phone OSINT Bot*
-
-Hello *{user.first_name}*! I can lookup phone information.
-
-📍 *How to use:*
-Simply send me any 10-digit Indian phone number.
-
-📌 *Example:* `8799610678`
-
-⚡ *Features:*
-• Name, Father's Name
-• Address Details  
-• Telecom Operator
-• Alternate Numbers
-• ID Information
-
-✅ *Status:* Online
-🏠 *Host:* Render.com
-"""
-    context.bot.send_message(chat_id=update.effective_chat.id, text=welcome, parse_mode='Markdown')
-
-def handle_message(update, context):
-    """Handle incoming messages"""
-    text = update.message.text.strip()
-    
-    # Check if it's a 10-digit number
-    if text.isdigit() and len(text) == 10:
-        # Send searching message
-        searching_msg = context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"🔍 *Searching for:* `{text}`\nPlease wait...",
-            parse_mode='Markdown'
-        )
-        
-        # Get phone info
-        result = get_phone_info(text)
-        
-        # Send result
-        if result:
-            response = format_info(result, text)
-        else:
-            response = "❌ Sorry, API is currently unavailable. Please try again later."
-        
-        context.bot.send_message(
-            chat_id=update.effective_chat.id, 
-            text=response, 
-            parse_mode='Markdown'
-        )
-        
-        # Delete searching message
-        try:
-            context.bot.delete_message(
-                chat_id=update.effective_chat.id,
-                message_id=searching_msg.message_id
-            )
-        except:
-            pass
-    else:
-        context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="📱 *Invalid Input!*\nPlease send a valid 10-digit phone number.\n\nExample: `9876543210`",
-            parse_mode='Markdown'
-        )
-
-def error(update, context):
-    """Log errors"""
-    logger.warning(f'Update "{update}" caused error "{context.error}"')
-
 def main():
-    """Start the bot"""
-    logger.info("🚀 Starting Phone OSINT Bot...")
+    logger.info("🚀 Initializing bot...")
     
     try:
-        # IMPORTANT: Version 12.8 with use_context=True
-        from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+        # Try different imports
+        try:
+            from telegram.ext import Application, CommandHandler, MessageHandler, filters
+            logger.info("✅ Using v20+ syntax")
+            VERSION = "v20"
+        except ImportError:
+            try:
+                from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+                logger.info("✅ Using v13-20 syntax")
+                VERSION = "v13"
+            except ImportError:
+                from telegram.ext import Updater, CommandHandler, MessageHandler
+                logger.info("✅ Using v12 syntax")
+                VERSION = "v12"
         
-        logger.info("✅ Libraries imported successfully")
+        # V20+ version
+        if VERSION == "v20":
+            async def start(update, context):
+                await update.message.reply_text("🤖 Phone OSINT Bot - Send 10-digit number")
+            
+            async def handle_message(update, context):
+                text = update.message.text.strip()
+                if text.isdigit() and len(text) == 10:
+                    await update.message.reply_text(f"Searching {text}...")
+                    result = get_phone_info(text)
+                    if result and result.get('success'):
+                        await update.message.reply_text(f"Found {len(result.get('results', []))} records")
+                    else:
+                        await update.message.reply_text("No data found")
+                else:
+                    await update.message.reply_text("Send 10-digit number")
+            
+            app = Application.builder().token(BOT_TOKEN).build()
+            app.add_handler(CommandHandler("start", start))
+            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+            app.run_polling()
         
-        # Create the Updater with use_context=True
-        updater = Updater(token=BOT_TOKEN, use_context=True)
+        # V13-20 version
+        elif VERSION == "v13":
+            def start(update, context):
+                update.message.reply_text("🤖 Phone OSINT Bot - Send 10-digit number")
+            
+            def handle_message(update, context):
+                text = update.message.text.strip()
+                if text.isdigit() and len(text) == 10:
+                    update.message.reply_text(f"Searching {text}...")
+                    result = get_phone_info(text)
+                    if result and result.get('success'):
+                        update.message.reply_text(f"Found {len(result.get('results', []))} records")
+                    else:
+                        update.message.reply_text("No data found")
+                else:
+                    update.message.reply_text("Send 10-digit number")
+            
+            updater = Updater(BOT_TOKEN, use_context=True)
+            dp = updater.dispatcher
+            dp.add_handler(CommandHandler("start", start))
+            dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+            updater.start_polling()
+            updater.idle()
         
-        # Get the dispatcher to register handlers
-        dp = updater.dispatcher
-        
-        # Add command handlers
-        dp.add_handler(CommandHandler("start", start))
-        dp.add_handler(CommandHandler("help", start))
-        
-        # Add message handler
-        dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-        
-        # Log all errors
-        dp.add_error_handler(error)
-        
-        # Start the Bot
-        logger.info("✅ Bot initialized, starting polling...")
-        updater.start_polling()
-        
-        logger.info("🤖 Bot is now running!")
-        
-        # Run the bot
-        updater.idle()
-        
-    except ImportError as e:
-        logger.error(f"❌ Import Error: {e}")
-        logger.error("Install: pip install python-telegram-bot==12.8 requests==2.31.0")
+        # V12 version
+        else:
+            def start(bot, update):
+                bot.send_message(chat_id=update.message.chat_id, text="🤖 Phone OSINT Bot")
+            
+            def handle_message(bot, update):
+                text = update.message.text.strip()
+                if text.isdigit() and len(text) == 10:
+                    bot.send_message(chat_id=update.message.chat_id, text=f"Searching {text}...")
+                    result = get_phone_info(text)
+                    if result and result.get('success'):
+                        bot.send_message(chat_id=update.message.chat_id, text=f"Found {len(result.get('results', []))} records")
+                    else:
+                        bot.send_message(chat_id=update.message.chat_id, text="No data found")
+                else:
+                    bot.send_message(chat_id=update.message.chat_id, text="Send 10-digit number")
+            
+            from telegram.ext import Updater, CommandHandler, MessageHandler
+            updater = Updater(BOT_TOKEN)
+            dp = updater.dispatcher
+            dp.add_handler(CommandHandler("start", start))
+            dp.add_handler(MessageHandler(None, handle_message))
+            updater.start_polling()
+            updater.idle()
+            
     except Exception as e:
-        logger.error(f"❌ Fatal Error: {e}")
+        logger.error(f"❌ Final error: {e}")
         import traceback
         traceback.print_exc()
 
