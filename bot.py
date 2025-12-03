@@ -1,92 +1,162 @@
 import os
-import sys
 import requests
 import logging
 
-# Logger setup
-logging.basicConfig(level=logging.INFO)
+# Setup logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 # Configuration
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8133993773:AAG_pRTiU2M_X-nKdD31HrAe-dXeAHuMDKo")
 OSINT_API = "https://osint-info.great-site.net/num.php?key=Vishal&phone="
 
-logger.info("🚀 Starting bot...")
+def get_phone_info(phone):
+    """Fetch phone information from API"""
+    try:
+        response = requests.get(OSINT_API + phone, timeout=10)
+        logger.info(f"API Response Status: {response.status_code}")
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        logger.error(f"API Error: {e}")
+        return None
+
+def format_info(data, phone):
+    """Format API response into readable text"""
+    if not data or not data.get('success'):
+        return "❌ No information found for this number."
+    
+    results = data.get('results', [])
+    if not results:
+        return "❌ No records found."
+    
+    text = f"📱 *Phone Lookup Results*\nNumber: `{phone}`\nRecords Found: {len(results)}\n\n"
+    
+    for i, record in enumerate(results, 1):
+        address = record.get('address', 'N/A').replace('!', ', ')
+        text += f"""*Record #{i}*
+👤 Name: {record.get('name', 'N/A')}
+👨 Father: {record.get('father_name', 'N/A')}
+📞 Mobile: {record.get('mobile', 'N/A')}
+🏠 Address: {address}
+📱 Alternate: {record.get('alternate_mobile', 'N/A')}
+📡 Telecom: {record.get('telecom_circle', 'N/A')}
+🆔 ID: {record.get('id_number', 'N/A')}
+━━━━━━━━━━━━━━━━━━━━━━
+"""
+    return text
+
+def start(update, context):
+    """Handle /start command"""
+    user = update.message.from_user
+    welcome = f"""
+🤖 *Phone OSINT Bot*
+
+Hello *{user.first_name}*! I can lookup phone information.
+
+📍 *How to use:*
+Simply send me any 10-digit Indian phone number.
+
+📌 *Example:* `8799610678`
+
+⚡ *Features:*
+• Name, Father's Name
+• Address Details  
+• Telecom Operator
+• Alternate Numbers
+• ID Information
+
+✅ *Status:* Online
+🏠 *Host:* Render.com
+"""
+    update.message.reply_text(welcome, parse_mode='Markdown')
+
+def handle_message(update, context):
+    """Handle incoming messages"""
+    text = update.message.text.strip()
+    
+    # Check if it's a 10-digit number
+    if text.isdigit() and len(text) == 10:
+        # Send searching message
+        searching_msg = update.message.reply_text(
+            f"🔍 *Searching for:* `{text}`\nPlease wait...",
+            parse_mode='Markdown'
+        )
+        
+        # Get phone info
+        result = get_phone_info(text)
+        
+        # Send result
+        if result:
+            response = format_info(result, text)
+        else:
+            response = "❌ Sorry, API is currently unavailable. Please try again later."
+        
+        update.message.reply_text(response, parse_mode='Markdown')
+        
+        # Delete searching message
+        try:
+            context.bot.delete_message(
+                chat_id=update.message.chat_id,
+                message_id=searching_msg.message_id
+            )
+        except:
+            pass
+    else:
+        update.message.reply_text(
+            "📱 *Invalid Input!*\nPlease send a valid 10-digit phone number.\n\nExample: `9876543210`",
+            parse_mode='Markdown'
+        )
+
+def error(update, context):
+    """Log errors"""
+    logger.warning(f'Update "{update}" caused error "{context.error}"')
 
 def main():
+    """Start the bot"""
+    logger.info("🚀 Starting Phone OSINT Bot...")
+    
     try:
-        # Version 20+ ke liye
-        from telegram.ext import Application, CommandHandler, MessageHandler, filters
+        # Import here to catch import errors
+        from telegram import ParseMode
+        from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
         
-        # Bot functions
-        def get_phone_info(phone):
-            try:
-                response = requests.get(OSINT_API + phone, timeout=10)
-                if response.status_code == 200:
-                    return response.json()
-                return None
-            except Exception as e:
-                logger.error(f"API Error: {e}")
-                return None
+        logger.info("✅ Libraries imported successfully")
         
-        def format_info(data, phone):
-            if not data or not data.get('success'):
-                return "❌ No information found."
-            
-            results = data.get('results', [])
-            text = f"📱 *Phone Lookup Results*\nNumber: `{phone}`\nRecords: {len(results)}\n\n"
-            
-            for i, record in enumerate(results, 1):
-                address = record.get('address', 'N/A').replace('!', ', ')
-                text += f"""
-*Record #{i}*
-Name: {record.get('name', 'N/A')}
-Father: {record.get('father_name', 'N/A')}
-Mobile: {record.get('mobile', 'N/A')}
-Address: {address}
-Alternate: {record.get('alternate_mobile', 'N/A')}
-Telecom: {record.get('telecom_circle', 'N/A')}
-ID: {record.get('id_number', 'N/A')}
-━━━━━━━━━━━━━━━━━━
-"""
-            return text
+        # Create the Updater
+        updater = Updater(BOT_TOKEN, use_context=True)
         
-        async def start(update, context):
-            user = update.message.from_user
-            welcome = f"""🤖 *Phone OSINT Bot*
-
-Hello {user.first_name}! Send 10-digit phone number.
-
-Example: `8799610678`"""
-            await update.message.reply_text(welcome, parse_mode='Markdown')
+        # Get the dispatcher to register handlers
+        dp = updater.dispatcher
         
-        async def handle_message(update, context):
-            text = update.message.text.strip()
-            if text.isdigit() and len(text) == 10:
-                msg = await update.message.reply_text(f"🔍 Searching {text}...", parse_mode='Markdown')
-                result = get_phone_info(text)
-                if result:
-                    response = format_info(result, text)
-                else:
-                    response = "❌ API error. Try again later."
-                await update.message.reply_text(response, parse_mode='Markdown')
-                await msg.delete()
-            else:
-                await update.message.reply_text("📱 Send a 10-digit phone number.", parse_mode='Markdown')
+        # Add command handlers
+        dp.add_handler(CommandHandler("start", start))
+        dp.add_handler(CommandHandler("help", start))
         
-        # Create application
-        application = Application.builder().token(BOT_TOKEN).build()
+        # Add message handler
+        dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
         
-        # Add handlers
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        # Log all errors
+        dp.add_error_handler(error)
         
-        # Run bot
-        logger.info("✅ Bot starting...")
-        application.run_polling()
+        # Start the Bot
+        logger.info("✅ Bot initialized, starting polling...")
+        updater.start_polling()
         
+        logger.info("🤖 Bot is now running! Press Ctrl+C to stop.")
+        
+        # Run the bot until you press Ctrl-C
+        updater.idle()
+        
+    except ImportError as e:
+        logger.error(f"❌ Import Error: {e}")
+        logger.error("Please install: pip install python-telegram-bot==13.15 requests==2.31.0")
     except Exception as e:
-        logger.error(f"❌ Error: {e}")
+        logger.error(f"❌ Fatal Error: {e}")
         import traceback
         traceback.print_exc()
 
