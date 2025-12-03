@@ -2,7 +2,7 @@ import os
 import requests
 import logging
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 # Configuration
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8133993773:AAG_pRTiU2M_X-nKdD31HrAe-dXeAHuMDKo")
@@ -44,7 +44,7 @@ ID: {record.get('id_number', 'N/A')}
 """
     return text
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start(update: Update, context: CallbackContext):
     user = update.message.from_user
     welcome = f"""
 🤖 *Phone OSINT Bot*
@@ -58,13 +58,13 @@ Example: `8799610678`
 ✅ API: Working
 ⚡ Host: Render
 """
-    await update.message.reply_text(welcome, parse_mode='Markdown')
+    update.message.reply_text(welcome, parse_mode='Markdown')
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_message(update: Update, context: CallbackContext):
     text = update.message.text.strip()
     
     if text.isdigit() and len(text) == 10:
-        msg = await update.message.reply_text("🔍 Searching...", parse_mode='Markdown')
+        msg = update.message.reply_text("🔍 Searching...", parse_mode='Markdown')
         result = get_phone_info(text)
         
         if result:
@@ -72,29 +72,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             response = "❌ API error. Try again later."
         
-        await update.message.reply_text(response, parse_mode='Markdown')
-        await msg.delete()
+        update.message.reply_text(response, parse_mode='Markdown')
+        context.bot.delete_message(chat_id=update.message.chat_id, message_id=msg.message_id)
     else:
-        await update.message.reply_text("📱 Send a 10-digit phone number.", parse_mode='Markdown')
+        update.message.reply_text("📱 Send a 10-digit phone number.", parse_mode='Markdown')
 
 def main():
-    logger.info("🚀 Starting bot on Render...")
+    logger.info("🚀 Starting bot...")
     
     try:
-        # Debug: Check token
-        logger.info(f"Token: {BOT_TOKEN[:10]}...")
+        # Create updater
+        updater = Updater(BOT_TOKEN, use_context=True)
         
-        # Create application
-        app = Application.builder().token(BOT_TOKEN).build()
+        # Get dispatcher
+        dp = updater.dispatcher
         
         # Add handlers
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        dp.add_handler(CommandHandler("start", start))
+        dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
         
+        # Start bot
+        updater.start_polling()
         logger.info("✅ Bot started successfully!")
         
-        # ✅ YEH LINE CHANGE KARNA THA - ALLOWED_UPDATES ADD KARO
-        app.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Run until Ctrl+C
+        updater.idle()
         
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
