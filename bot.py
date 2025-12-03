@@ -93,8 +93,8 @@ def main():
         
         logger.info("✅ Bot started successfully!")
         
-        # Run bot
-        app.run_polling(drop_pending_updates=True)
+        # ✅ YEH LINE CHANGE KARNA THA - ALLOWED_UPDATES ADD KARO
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
         
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
