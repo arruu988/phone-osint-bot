@@ -2,60 +2,164 @@ import os
 import requests
 import logging
 
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Configuration
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8133993773:AAG_pRTiU2M_X-nKdD31HrAe-dXeAHuMDKo")
 OSINT_API = "https://osint-info.great-site.net/num.php?key=Vishal&phone="
 
+def get_phone_info(phone):
+    """Fetch phone information from API"""
+    try:
+        response = requests.get(OSINT_API + phone, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        logger.error(f"API Error: {e}")
+        return None
+
+def format_info(data, phone):
+    """Format API response into readable text"""
+    if not data or not data.get('success'):
+        return "❌ No information found for this number."
+    
+    results = data.get('results', [])
+    if not results:
+        return "❌ No records found."
+    
+    text = f"📱 *Phone Lookup Results*\nNumber: `{phone}`\nRecords Found: {len(results)}\n\n"
+    
+    for i, record in enumerate(results, 1):
+        address = record.get('address', 'N/A').replace('!', ', ')
+        text += f"""*Record #{i}*
+👤 Name: {record.get('name', 'N/A')}
+👨 Father: {record.get('father_name', 'N/A')}
+📞 Mobile: {record.get('mobile', 'N/A')}
+🏠 Address: {address}
+📱 Alternate: {record.get('alternate_mobile', 'N/A')}
+📡 Telecom: {record.get('telecom_circle', 'N/A')}
+🆔 ID: {record.get('id_number', 'N/A')}
+━━━━━━━━━━━━━━━━━━━━━━
+"""
+    return text
+
+def start(update, context):
+    """Handle /start command"""
+    user = update.message.from_user
+    welcome = f"""
+🤖 *Phone OSINT Bot*
+
+Hello *{user.first_name}*! I can lookup phone information.
+
+📍 *How to use:*
+Simply send me any 10-digit Indian phone number.
+
+📌 *Example:* `8799610678`
+
+⚡ *Features:*
+• Name, Father's Name
+• Address Details  
+• Telecom Operator
+• Alternate Numbers
+• ID Information
+
+✅ *Status:* Online
+🏠 *Host:* Render.com
+"""
+    context.bot.send_message(chat_id=update.effective_chat.id, text=welcome, parse_mode='Markdown')
+
+def handle_message(update, context):
+    """Handle incoming messages"""
+    text = update.message.text.strip()
+    
+    # Check if it's a 10-digit number
+    if text.isdigit() and len(text) == 10:
+        # Send searching message
+        searching_msg = context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"🔍 *Searching for:* `{text}`\nPlease wait...",
+            parse_mode='Markdown'
+        )
+        
+        # Get phone info
+        result = get_phone_info(text)
+        
+        # Send result
+        if result:
+            response = format_info(result, text)
+        else:
+            response = "❌ Sorry, API is currently unavailable. Please try again later."
+        
+        context.bot.send_message(
+            chat_id=update.effective_chat.id, 
+            text=response, 
+            parse_mode='Markdown'
+        )
+        
+        # Delete searching message
+        try:
+            context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=searching_msg.message_id
+            )
+        except:
+            pass
+    else:
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="📱 *Invalid Input!*\nPlease send a valid 10-digit phone number.\n\nExample: `9876543210`",
+            parse_mode='Markdown'
+        )
+
+def error(update, context):
+    """Log errors"""
+    logger.warning(f'Update "{update}" caused error "{context.error}"')
+
 def main():
-    logger.info("Starting bot...")
+    """Start the bot"""
+    logger.info("🚀 Starting Phone OSINT Bot...")
     
     try:
-        # TELEGRAM BOT 12 VERSION USE KARO
-        from telegram import Bot
-        from telegram.ext import Updater, CommandHandler, MessageHandler
+        # IMPORTANT: Version 12.8 with use_context=True
+        from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
         
-        # Create bot
-        bot = Bot(token=BOT_TOKEN)
-        updater = Updater(bot=bot)
-        dispatcher = updater.dispatcher
+        logger.info("✅ Libraries imported successfully")
         
-        def start(bot, update):
-            update.message.reply_text("Phone OSINT Bot Started! Send 10-digit number.")
+        # Create the Updater with use_context=True
+        updater = Updater(token=BOT_TOKEN, use_context=True)
         
-        def handle_message(bot, update):
-            text = update.message.text
-            if text.isdigit() and len(text) == 10:
-                update.message.reply_text(f"Searching: {text}")
-                try:
-                    response = requests.get(OSINT_API + text, timeout=10)
-                    if response.status_code == 200:
-                        data = response.json()
-                        if data and data.get('success'):
-                            results = data.get('results', [])
-                            reply = f"Found {len(results)} records for {text}"
-                            for r in results[:3]:  # First 3 results
-                                reply += f"\nName: {r.get('name', 'N/A')}"
-                            update.message.reply_text(reply)
-                        else:
-                            update.message.reply_text("No data found")
-                    else:
-                        update.message.reply_text("API error")
-                except:
-                    update.message.reply_text("Error fetching data")
-            else:
-                update.message.reply_text("Send 10-digit number")
+        # Get the dispatcher to register handlers
+        dp = updater.dispatcher
         
-        dispatcher.add_handler(CommandHandler('start', start))
-        dispatcher.add_handler(MessageHandler([], handle_message))
+        # Add command handlers
+        dp.add_handler(CommandHandler("start", start))
+        dp.add_handler(CommandHandler("help", start))
         
+        # Add message handler
+        dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+        
+        # Log all errors
+        dp.add_error_handler(error)
+        
+        # Start the Bot
+        logger.info("✅ Bot initialized, starting polling...")
         updater.start_polling()
-        logger.info("Bot running!")
+        
+        logger.info("🤖 Bot is now running!")
+        
+        # Run the bot
         updater.idle()
         
+    except ImportError as e:
+        logger.error(f"❌ Import Error: {e}")
+        logger.error("Install: pip install python-telegram-bot==12.8 requests==2.31.0")
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"❌ Fatal Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == '__main__':
     main()
